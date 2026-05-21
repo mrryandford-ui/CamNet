@@ -25,7 +25,8 @@ class AndroidBridge(
         (context as? MainActivity)?.checkForUpdate(manual = true)
     }
 
-    /** Appends a diagnostic message to crash_report.txt and logcat for debugging. */
+    /** Appends a diagnostic message to diagnostics.txt (NOT crash_report.txt) and logcat.
+     *  Writing to crash_report.txt was causing a false "app crashed" dialog on every relaunch. */
     @JavascriptInterface
     fun logDiagnostic(message: String) {
         android.util.Log.d("CamNet", "JS diagnostic: $message")
@@ -33,9 +34,35 @@ class AndroidBridge(
             val entry = "[${java.time.LocalDateTime.now()}] $message\n"
             java.io.File(
                 (context as? MainActivity)?.filesDir ?: return,
-                "crash_report.txt"
+                "diagnostics.txt"
             ).appendText(entry)
         } catch (_: Exception) {}
+    }
+
+    /** Returns the battery level as a percentage (0-100), or -1 if unavailable. */
+    @JavascriptInterface
+    fun getBatteryLevel(): Int = try {
+        val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE)
+                as android.os.BatteryManager
+        bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+    } catch (_: Exception) { -1 }
+
+    /** Controls the device torch LED via CameraManager — more reliable than
+     *  WebView getUserMedia track.applyConstraints on MediaTek/Samsung devices. */
+    @JavascriptInterface
+    fun setTorch(on: Boolean) {
+        try {
+            val cm = context.getSystemService(android.content.Context.CAMERA_SERVICE)
+                    as android.hardware.camera2.CameraManager
+            val rearId = cm.cameraIdList.firstOrNull { id ->
+                val chars = cm.getCameraCharacteristics(id)
+                chars.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING) ==
+                    android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK
+            } ?: cm.cameraIdList.firstOrNull() ?: return
+            cm.setTorchMode(rearId, on)
+        } catch (e: Exception) {
+            android.util.Log.w("CamNet", "setTorch($on) failed: $e")
+        }
     }
 
     /** Called from any screen's back/home button to navigate to the home screen. */
@@ -235,6 +262,117 @@ class AndroidBridge(
     fun showCameraSetup() {
         (context as? MainActivity)?.runOnUiThread {
             (context as? MainActivity)?.showSetup()
+        }
+    }
+
+    /**
+     * Called from the home screen "Solo" button — loads solo.html directly from
+     * assets (no Ktor server needed; all logic is local JS + camera).
+     */
+    @JavascriptInterface
+    fun startSolo() {
+        val activity = context as? MainActivity ?: return
+        activity.runOnUiThread {
+            try {
+                ContextCompat.startForegroundService(context, Intent(context, StreamingService::class.java))
+            } catch (t: Throwable) {
+                android.util.Log.w("CamNet", "startSolo: startForegroundService failed: $t")
+            }
+            activity.webView.clearHistory()
+            // Load solo.html from assets via loadDataWithBaseURL so relative CSS/JS paths resolve.
+            // Base URL uses file:///android_asset/ so the WebView treats it as local-origin
+            // and grants camera/mic permission requests (same pattern as setupHtml).
+            try {
+                val html = activity.assets.open("public/solo.html").bufferedReader().readText()
+                activity.webView.loadDataWithBaseURL(
+                    "file:///android_asset/public/", html, "text/html", "UTF-8", null
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("CamNet", "startSolo load failed: $e")
+                android.widget.Toast.makeText(context, "Could not load Solo mode: $e", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    /** Starts Monitor mode and auto-opens the Solo Admin panel (viewer.html#solo-admin). */
+    @JavascriptInterface
+    fun openSoloAdmin() {
+        startMonitor()   // starts Ktor server + loads viewer.html
+        // viewer.js detects #solo-admin in the hash and opens the panel on load
+        // The hash is appended by startMonitor() → loadUrl below via the existing fragment mechanism.
+        // We post a delayed JS injection to open the panel after the page loads.
+        val activity = context as? MainActivity ?: return
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            activity.webView.evaluateJavascript(
+                "if(typeof openPanel==='function') openPanel('soloAdminPanel');", null)
+        }, 3_000)
+    }
+
+    /**
+     * POSTs a push notification to a ntfy-compatible topic URL via HttpURLConnection.
+     * Called by solo.js on motion detection and test button.
+     * Runs on a background thread — never blocks the UI.
+     *
+     * Compatible with ntfy.sh, self-hosted ntfy, and any webhook that accepts a POST
+     * with Title / Priority / Message headers (or a raw body).
+     *
+     * @param topicUrl   Full URL of the ntfy topic (e.g. https://ntfy.sh/my-topic)
+     * @param title      Notification title (X-Title header)
+     * @param body       Notification body (request body text)
+     * @param imageBase64 Optional JPEG base64 data URL for a thumbnail attachment; pass "" to skip
+     */
+    @JavascriptInterface
+    fun sendWebhookNotification(topicUrl: String, title: String, body: String, imageBase64: String) {
+        kotlin.concurrent.thread(isDaemon = true, name = "camnet-ntfy") {
+            try {
+                val url  = java.net.URL(topicUrl.trim())
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod    = "POST"
+                conn.doOutput         = true
+                conn.connectTimeout   = 8_000
+                conn.readTimeout      = 8_000
+                conn.setRequestProperty("Title",    title)
+                conn.setRequestProperty("Priority", "high")
+                conn.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+
+                // Try with JPEG attachment; fall back to text-only if rejected (free tier, size limit)
+                var sentWithImage = false
+                if (imageBase64.isNotEmpty()) {
+                    try {
+                        val bytes = android.util.Base64.decode(
+                            imageBase64.substringAfter(","), android.util.Base64.DEFAULT
+                        )
+                        conn.setRequestProperty("Filename", "motion.jpg")
+                        conn.setRequestProperty("X-Message", body)
+                        conn.setRequestProperty("Content-Type", "image/jpeg")
+                        conn.outputStream.use { it.write(bytes) }
+                        sentWithImage = true
+                    } catch (_: Exception) {}
+                }
+                if (!sentWithImage) {
+                    conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                }
+
+                val code = conn.responseCode
+                android.util.Log.i("CamNet", "ntfy POST $topicUrl → HTTP $code (image=$sentWithImage)")
+                conn.disconnect()
+
+                when {
+                    code == 429 -> (context as? MainActivity)?.runOnUiThread {
+                        android.widget.Toast.makeText(context,
+                            "ntfy rate limit hit — reduce notification frequency or upgrade plan",
+                            android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    code !in 200..299 -> (context as? MainActivity)?.runOnUiThread {
+                        android.widget.Toast.makeText(context, "Notification failed (HTTP $code)", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("CamNet", "sendWebhookNotification failed: $e")
+                (context as? MainActivity)?.runOnUiThread {
+                    android.widget.Toast.makeText(context, "Notification error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 

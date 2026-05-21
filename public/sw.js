@@ -1,4 +1,4 @@
-const CACHE = 'camnet-v11';
+const CACHE = 'camnet-v15';
 const PRECACHE = [
   '/',
   '/viewer.html',

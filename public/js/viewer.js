@@ -35,6 +35,9 @@ let photoQuality = '720'; // '480' | '720' | '1080' | 'source'
 let alertSound    = true;
 let alertVibration = true;
 let alertCooldown  = 30; // seconds — must be declared before lsLoad rehydration at boot
+let motionAutoSnap       = false; // declared here to avoid TDZ — lsLoad assigns at boot (line ~130)
+let motionFlash          = false;
+let motionFlashStillMins = 2;
 
 // ── Rough JPEG + video size tables for picker estimates ────────
 // Values are byte/bit averages — JPEG size varies a lot with scene content.
@@ -357,10 +360,19 @@ function onCameraJoined(cameraId, name) {
 
   pc.onconnectionstatechange = () => updateConnState(cameraId, pc.connectionState);
   pc.oniceconnectionstatechange = () => {
-    if (pc.iceConnectionState === 'failed') pc.restartIce();
+    const s = pc.iceConnectionState;
+    if (s === 'failed') {
+      pc.restartIce();
+    } else if (s === 'disconnected') {
+      // Samsung radios often sit in 'disconnected' without reaching 'failed'.
+      // Give 8 s to self-recover, then force an ICE restart.
+      setTimeout(() => {
+        if (pc.iceConnectionState === 'disconnected') pc.restartIce();
+      }, 8_000);
+    }
   };
 
-  peers.set(cameraId, { pc, name, stream: null, recorder: null, motion: null, facingMode: null, torchOn: false, quality: 720, stealth: false, recordTarget: null, recDurationMs: 0, recStartTime: 0, recSegNum: 0, recBaseName: '', recChunks: [], recSegTimer: null, recDurationTimer: null, zone: null, lastMotionAt: 0, motionConsecutive: 0, motionFlashActive: false, motionFlashTimer: null, timelapse: null, audioSendTransceiver: null, dvrSegments: [], dvrRecorder: null, dvrSegTimer: null, dvrEnabled: false });
+  peers.set(cameraId, { pc, name, stream: null, recorder: null, motion: null, facingMode: null, torchOn: false, quality: 720, stealth: false, recordTarget: null, recDurationMs: 0, recStartTime: 0, recSegNum: 0, recBaseName: '', recChunks: [], recSegTimer: null, recDurationTimer: null, zone: null, lastMotionAt: 0, motionConsecutive: 0, motionFlashActive: false, motionFlashTimer: null, timelapse: null, audioSendTransceiver: null, dvrSegments: [], dvrRecorder: null, dvrSegTimer: null, dvrEnabled: false, stallWatchdog: null });
   addCameraCard(cameraId, name);
   updateCamCount();
 }
@@ -368,6 +380,7 @@ function onCameraJoined(cameraId, name) {
 function onCameraLeft(cameraId) {
   const peer = peers.get(cameraId);
   if (peer) {
+    if (peer.stallWatchdog) { clearInterval(peer.stallWatchdog); peer.stallWatchdog = null; }
     stopMotion(cameraId);
     stopRecording(cameraId);
     stopTimelapse(cameraId);
@@ -516,8 +529,13 @@ function syncMuteBtn(cameraId) {
 }
 
 function attachStream(cameraId, stream) {
+  const peer = peers.get(cameraId);
   const video = document.querySelector(`#card-${cameraId} .cam-video`);
-  if (!video) return;
+  if (!video || !peer) return;
+
+  // Clear any previous stall watchdog before re-attaching.
+  if (peer.stallWatchdog) { clearInterval(peer.stallWatchdog); peer.stallWatchdog = null; }
+
   video.srcObject = stream;
   video.muted = muteAll;
   video.play()
@@ -525,6 +543,26 @@ function attachStream(cameraId, stream) {
     .finally(() => syncMuteBtn(cameraId));
   applyMirror(cameraId);
   startMotion(cameraId);
+
+  // Stall watchdog: poll every 5 s; if currentTime hasn't advanced for 3 ticks (~15 s)
+  // the stream is frozen — re-assign srcObject to force the decoder to restart.
+  let lastTime = -1, stallTicks = 0;
+  peer.stallWatchdog = setInterval(() => {
+    if (!peers.has(cameraId)) { clearInterval(peer.stallWatchdog); return; }
+    if (video.readyState < 2 || video.paused) return;
+    if (video.currentTime === lastTime) {
+      if (++stallTicks >= 3) {
+        stallTicks = 0;
+        console.warn('[CamNet] video stall on', cameraId, '— reattaching stream');
+        video.srcObject = null;
+        video.srcObject = peer.stream;
+        video.play().catch(() => {});
+      }
+    } else {
+      stallTicks = 0;
+    }
+    lastTime = video.currentTime;
+  }, 5_000);
   // Sync per-camera notify button state
   const notifyBtn = document.querySelector(`#card-${cameraId} [data-action="notify"]`);
   if (notifyBtn) {
@@ -2565,6 +2603,25 @@ document.getElementById('motionFlashStillRow').style.display = motionFlash ? '' 
 document.getElementById('smartDetectionStatusRow').style.display = smartDetectionEnabled ? '' : 'none';
 document.getElementById('smartClassesRow').style.display        = smartDetectionEnabled ? 'flex' : 'none';
 
+// ── Monitor keep-alive ─────────────────────────────────────────
+// Prevents Samsung One UI from throttling WebView JS/video rendering
+// when the screen dims or the app is briefly backgrounded. Same pattern
+// as camera.js keepAlive() — silent audio + MediaSession playback state.
+function startMonitorKeepAlive() {
+  try {
+    const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0001;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+  } catch (_) {}
+  try {
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+  } catch (_) {}
+}
+
 // ── Boot ───────────────────────────────────────────────────────
 // Android (Kotlin) passes the LAN IP in the URL fragment to avoid
 // Samsung WebView's broken fetch() SSL path with self-signed certs.
@@ -2601,6 +2658,7 @@ document.getElementById('smartClassesRow').style.display        = smartDetection
     window._sslPort = sslPort;
     showIP(fragIP, sslPort);
     connectWS();
+    startMonitorKeepAlive();
   } else {
     // Browser / non-Samsung fallback: use fetch
     fetch('/api/info')
@@ -2620,6 +2678,136 @@ document.getElementById('smartClassesRow').style.display        = smartDetection
         console.error('api/info fetch failed:', err);
         try { window.AndroidBridge?.logDiagnostic?.('api/info failed: ' + err); } catch (_) {}
       })
-      .finally(() => connectWS());
+      .finally(() => { connectWS(); startMonitorKeepAlive(); });
   }
 })();
+
+// ── Solo Admin Panel ───────────────────────────────────────────
+// Devices stored as: [{id, name, ntfyUrl, lastHb, armed, motionCount, lastAlertAt}]
+let soloDevices = [];
+let soloAdminPollTimer = null;
+const SOLO_HB_STALE_MS  = 120_000;   // yellow after 2 min
+const SOLO_HB_DEAD_MS   = 300_000;   // red after 5 min
+
+function lsLoadSoloDevices()  { try { return JSON.parse(localStorage.getItem('camnet.solo.devices') || '[]'); } catch { return []; } }
+function lsSaveSoloDevices()  { localStorage.setItem('camnet.solo.devices', JSON.stringify(soloDevices)); }
+
+function soloHbUrl(ntfyUrl)  { return ntfyUrl.replace(/\/([^\/]+)$/, '/$1-hb'); }
+function soloCmdUrl(ntfyUrl) { return ntfyUrl.replace(/\/([^\/]+)$/, '/$1-cmd'); }
+
+async function sendSoloCommand(device, cmd) {
+  try {
+    const r = await fetch(soloCmdUrl(device.ntfyUrl), {
+      method: 'POST',
+      headers: { 'Title': cmd, 'Priority': 'high', 'Content-Type': 'text/plain' },
+      body: cmd,
+    });
+    if (r.status === 429) {
+      showToast(`⚠ ntfy rate limit hit — wait a minute or use a fresh topic`);
+    } else if (!r.ok) {
+      showToast(`ntfy rejected command (HTTP ${r.status})`);
+    } else {
+      showToast(`Sent "${cmd}" to ${device.name}`);
+    }
+  } catch (e) {
+    showToast(`Command failed: ${e.message}`);
+  }
+}
+
+async function pollSoloDevice(device) {
+  const since = device._lastPoll || Math.floor((Date.now() - 180_000) / 1000);
+  device._lastPoll = Math.floor(Date.now() / 1000);
+  try {
+    const r = await fetch(`${soloHbUrl(device.ntfyUrl)}/json?poll=1&since=${since}`);
+    if (!r.ok) return;
+    const text = await r.text();
+    for (const line of text.trim().split('\n')) {
+      if (!line) continue;
+      try {
+        const msg  = JSON.parse(line);
+        const data = JSON.parse(msg.message || '{}');
+        device.lastHb      = Date.now();
+        device.armed       = !!data.armed;
+        device.motionCount = data.motionCount ?? device.motionCount ?? 0;
+        device.lastAlertAt = data.lastAlertAt ?? device.lastAlertAt ?? 0;
+        device.uptime      = data.uptime;
+        device.battery     = data.battery ?? device.battery ?? -1;
+      } catch (_) {}
+    }
+  } catch (_) {}
+  renderSoloDeviceCard(device);
+}
+
+function renderSoloDeviceCard(device) {
+  const el = document.getElementById(`sdc-${device.id}`);
+  if (!el) return;
+  const age     = device.lastHb ? Date.now() - device.lastHb : Infinity;
+  const dot     = age < SOLO_HB_STALE_MS ? '🟢' : age < SOLO_HB_DEAD_MS ? '🟡' : '🔴';
+  const label   = device.lastHb ? (age < 60_000 ? `${Math.floor(age/1000)}s ago` : `${Math.floor(age/60000)}m ago`) : 'Never';
+  const armed   = device.armed ? '🟠 ARMED' : '⚪ DISARMED';
+  const lastAl  = device.lastAlertAt ? new Date(device.lastAlertAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—';
+  const batPct  = device.battery >= 0 ? device.battery : null;
+  const batIcon = batPct === null ? '' : batPct > 60 ? '🔋' : batPct > 20 ? '🪫' : '🪫⚠';
+  const batStr  = batPct === null ? '' : ` · ${batIcon} ${batPct}%`;
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <span style="font-weight:700;font-size:14px">${dot} ${escHtml(device.name)}</span>
+      <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--surface-2)">${armed}</span>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">
+      Last seen: ${label} &nbsp;·&nbsp; Alerts: ${device.motionCount ?? 0} &nbsp;·&nbsp; Last: ${lastAl}${batStr}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button onclick="sendSoloCommand(soloDevices.find(d=>d.id==='${device.id}'),'arm')"    class="sda-btn">🔴 Arm</button>
+      <button onclick="sendSoloCommand(soloDevices.find(d=>d.id==='${device.id}'),'disarm')" class="sda-btn">✅ Disarm</button>
+      <button onclick="sendSoloCommand(soloDevices.find(d=>d.id==='${device.id}'),'snapshot')" class="sda-btn">📸 Snap</button>
+      <button onclick="sendSoloCommand(soloDevices.find(d=>d.id==='${device.id}'),'ping')"   class="sda-btn">Ping</button>
+      <button onclick="sendSoloCommand(soloDevices.find(d=>d.id==='${device.id}'),'restart')" class="sda-btn">↻ Restart</button>
+      <button onclick="removeSoloDevice('${device.id}')" class="sda-btn sda-danger">✕</button>
+    </div>`;
+}
+
+function buildSoloDeviceList() {
+  const list = document.getElementById('soloDeviceList');
+  list.innerHTML = soloDevices.length === 0
+    ? '<p style="color:var(--text-dim);font-size:13px;text-align:center">No Solo devices added yet.</p>'
+    : soloDevices.map(d => `
+        <div id="sdc-${d.id}" style="background:var(--surface-2);border:1.5px solid var(--border);
+             border-radius:12px;padding:12px">Loading…</div>`).join('');
+  soloDevices.forEach(d => renderSoloDeviceCard(d));
+}
+
+function removeSoloDevice(id) {
+  soloDevices = soloDevices.filter(d => d.id !== id);
+  lsSaveSoloDevices();
+  buildSoloDeviceList();
+}
+
+function startSoloAdminPolling() {
+  if (soloAdminPollTimer) return;
+  soloDevices.forEach(pollSoloDevice);
+  soloAdminPollTimer = setInterval(() => soloDevices.forEach(pollSoloDevice), 15_000);
+}
+
+document.getElementById('soloAdminBtn').addEventListener('click', () => {
+  soloDevices = lsLoadSoloDevices();
+  buildSoloDeviceList();
+  startSoloAdminPolling();
+  openPanel('soloAdminPanel');
+});
+
+document.getElementById('soloAdminAddBtn').addEventListener('click', () => {
+  let raw  = document.getElementById('soloAdminUrl').value.trim();
+  // Auto-prepend https://ntfy.sh/ if user just typed a topic name
+  if (raw && !raw.startsWith('http')) raw = 'https://ntfy.sh/' + raw;
+  const url  = raw;
+  const name = document.getElementById('soloAdminName').value.trim() || 'Solo Device';
+  if (!url || !url.startsWith('http')) { showToast('Enter a ntfy topic name or full URL'); return; }
+  const id = Math.random().toString(36).slice(2, 9);
+  soloDevices.push({ id, name, ntfyUrl: url, lastHb: null, armed: false, motionCount: 0, lastAlertAt: 0 });
+  lsSaveSoloDevices();
+  document.getElementById('soloAdminUrl').value  = '';
+  document.getElementById('soloAdminName').value = '';
+  buildSoloDeviceList();
+  pollSoloDevice(soloDevices[soloDevices.length - 1]);
+});

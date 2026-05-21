@@ -31,8 +31,10 @@ CamNet is a peer-to-peer multi-phone LAN security camera app. One phone acts as 
 | `AndroidBridge.kt` | JavascriptInterface: `saveSnapshot`, `saveVideo`, `startStreaming`, `stopStreaming` |
 | `public/js/viewer.js` | Monitor: WebRTC peer mgmt, motion detection, recording, timelapse, AI detection |
 | `public/js/camera.js` | Camera: media capture, torch, mic, quality, bitrate, stealth mode, recording |
+| `public/js/solo.js` | Solo: standalone motion detection, recording, flash strobe, audio alarm, ntfy push |
 | `public/viewer.html` | Monitor UI (session mgmt, layout, settings, camera cards) |
 | `public/camera.html` | Camera UI (join form, live screen, quality settings) |
+| `public/solo.html` | Solo UI (preview, arm/disarm, flash/alarm/record controls, settings sheet) |
 | `public/index.html` | Home screen with role selection (Monitor/Camera) |
 | `public/css/app.css` | All styling (fullscreen, motion indicator, timelapse picker, etc.) |
 
@@ -60,6 +62,25 @@ CamNet is a peer-to-peer multi-phone LAN security camera app. One phone acts as 
 - ✅ **Two-way audio:** Monitor mic → all connected cameras. 🎤 header button; camera plays via hidden `<audio>`, shows "🎤 MONITOR" badge when active. Uses `sendrecv` transceiver + `replaceTrack`.
 - ✅ **DVR rolling buffer:** Per-camera 24/7 rolling 30-min buffer (1-min segments, 30 max). 📼 button per card; playback modal with segment list (newest first) and video player. Oldest segments auto-purged.
 
+### Solo Remote Admin (from Monitor)
+- ✅ **📡 Solo Devices panel in Monitor viewer:** Header button opens admin panel. Add any Solo device by ntfy topic URL + name. Per-device card shows: 🟢/🟡/🔴 online dot (based on heartbeat age), armed/disarmed state, last seen, alert count, last alert time. Action buttons: Arm, Disarm, 📸 Snapshot, Ping, ↻ Restart, ✕ Remove. Devices persisted in `localStorage camnet.solo.devices`. Poll interval: 15s.
+- ✅ **Solo heartbeat (solo.js):** When armed + ntfy configured, POSTs status JSON (`armed`, `motionCount`, `lastAlertAt`, `uptime`) to `{topic}-hb` every 60s with `Priority: min` (silent — no notification). Also sends immediate heartbeat on arm/disarm.
+- ✅ **Solo command channel (solo.js):** Polls `{topic}-cmd/json?poll=1` every 10s for commands from the Monitor panel. Commands: `arm`, `disarm`, `snapshot` (captures + sends via ntfy), `ping` (immediate heartbeat), `restart` (reloads solo.html in-place). Uses ntfy as bidirectional bus — no direct device-to-device connection needed.
+
+### Solo Mode (Single Phone)
+- ✅ Standalone mode — no Wi-Fi, no Monitor phone, no Ktor server required
+- ✅ Arm/Disarm toggle with status badge and WATCHING indicator
+- ✅ Two-layer motion detection: pixel-diff + optional COCO-SSD AI (same as viewer.js)
+- ✅ Polygon zone editor (ray-cast point-in-polygon, same as viewer.js)
+- ✅ Torch strobe on motion: Off / Steady / Slow 1Hz / Fast 10Hz, auto-off duration
+- ✅ Audio alarm on motion: Off / Beep (880Hz bursts) / Sustained tone (440Hz), Web Audio API, no files
+- ✅ 5-min segment recording to DCIM/CamNet gallery
+- ✅ Record-on-motion with configurable idle-stop window
+- ✅ Push notifications via ntfy.sh (or any webhook) — `AndroidBridge.sendWebhookNotification`
+- ✅ Native Android motion notification via `AndroidBridge.fireMotionAlert`
+- ✅ Camera flip, snapshot, all settings persisted (localStorage `camnet.solo.*`)
+- ✅ Back button → home; StreamingService keeps camera alive
+
 ### Camera (Phone)
 - ✅ Join session with 6-char code or auto-join via QR `?room=XXXX` param
 - ✅ 30-second connection timeout: if no `joined` msg after 30s, returns to setup
@@ -79,10 +100,43 @@ CamNet is a peer-to-peer multi-phone LAN security camera app. One phone acts as 
 
 ## Known Issues & Fixes
 
-### Fixed (vNEXT — viewer.js TDZ crash on boot)
-- ✅ **`motionAutoSnap` / `motionFlash` / `motionFlashStillMins` TDZ crash (public/js/viewer.js):** Same pattern as v1.86 alertSound/alertVibration/alertCooldown fix. v1.92 added `lsLoad()` rehydration assignments at line ~130 but forgot to hoist the corresponding `let` declarations to the top of the file. ReferenceError "Cannot access 'motionAutoSnap' before initialization" fired at boot, killing the script before `connectWS()` ran — session code displayed BLANK, no peers ever joined. Caught by runtime check on Moto G 2025 after the v1.115 Gradle bump. Fix: moved all three `let` declarations to the top settings block.
-- ✅ **Versioning convention enforced:** changelog entry headers MUST use the actual APK `versionName` (`1.{CI_build_number}`). v1.94 and v1.95 labels were logical placeholders and have been corrected to their actual versionNames (v1.113 and v1.115).
-- ✅ **CLAUDE.md slimmed:** all "Fixed" entries older than the 10 most recent builds moved to CHANGELOG.md. "Future Enhancements" and "Deferred" lists moved to ROADMAP.md. "Branding" ship-state checklist deleted (static, not actionable). Operational sections (Tech Stack, Security, Development Notes, Repo Structure, Testing Checklist, CI/Deployment) retained.
+### Fixed (post-v1.118 — ntfy snapshot + home screen polish + relic web index fix)
+- ✅ **Solo AI detection silently swallowed motion events (solo.js):** AI mode was a gate — if the model ran and found no recognized class, `onMotionDetected` was never called, `lastAlertAt` never updated, and the cycle repeated silently forever. Fixed: AI is now a labeler — always fires `onMotionDetected(null)` when AI draws a blank, and `onMotionDetected(best.class)` when it identifies something. Also fixed: when a previous AI inference is still pending (`pendingSmartDetect=true`), basic detection fires immediately instead of being silently dropped.
+- ✅ **Solo Mode stealth / incognito (solo.html + solo.js):** 🥷 button in bottom controls bar. Shows full-screen black overlay (`#soloStealthOverlay`, z-index 9999); wake lock acquired on entry. All detection, recording, flash, alarm, and ntfy continue running. Tap 3× within 2 s to exit — same pattern as camera.js stealth mode.
+- ✅ **ntfy push notifications had no image (solo.js + AndroidBridge.kt):** `sendWebhookNotification` already accepted `imageBase64` and sent it as `image/jpeg` to ntfy (with text in `X-Message` header) — but `solo.js` was passing `''`. Fixed by adding `captureMotionSnap()` helper (320px JPEG from live video, 0.6 quality) shared by both `fireNativeAlert` and the ntfy call. ntfy notifications now always include a low-res snapshot regardless of local recording/snapshot settings, so remote viewers can see what triggered the alert.
+
+### Fixed (post-v1.118 — home screen polish + relic web index fix)
+- ✅ **Solo Mode button was purple — doesn't match app palette (MainActivity.kt `homeHtml()`):** Changed from `background:#1a1a2e; border:#7c3aed; color:#a78bfa` to `background:transparent; border:1.5px solid #475569; color:#94a3b8` — slate-gray outline, consistent with the rest of the dark theme.
+- ✅ **Hint text missing Solo description (homeHtml()):** Added `Solo: motion detection & recording — no network needed` as a third line in the hint paragraph below the buttons.
+- ✅ **"Relic screen" — web `index.html` occasionally shows instead of native home (public/index.html):** Root cause: Ktor still serves `public/index.html` at `/`. If the WebView lands on `https://localhost:3443/` for any reason (edge-case history navigation, a link pointing to `/`), it shows the old web card layout — no version, no Solo, no hint text. Fix: added an `AndroidBridge` check at the top of the script block — if running inside the app, immediately calls `AndroidBridge.goHome()` to return to the Kotlin native home. Browser/PWA users are unaffected (the `else` branch handles service worker and QR room param as before).
+
+### Fixed (post-v1.118 — S24 camera freeze + Moto G in-app update)
+- ✅ **Camera feed freezes on Samsung S24 Ultra (viewer.js):** Three root causes fixed:
+  - **No stall watchdog:** Added 5s interval in `attachStream` that checks `video.currentTime`. If it hasn't advanced for 3 ticks (~15 s), re-assigns `srcObject` to force decoder restart.
+  - **ICE 'disconnected' not handled:** Samsung radios frequently go to `disconnected` without reaching `failed`, so `restartIce()` never fired. Added 8s delayed restart on `disconnected` state.
+  - **No Monitor keep-alive:** Camera.js has silent audio + MediaSession to prevent Samsung One UI throttling; viewer.js had nothing. Added `startMonitorKeepAlive()` (silent oscillator + `mediaSession.playbackState = 'playing'`) called at boot alongside `connectWS()`.
+  - Stall watchdog cleared in `onCameraLeft` to prevent leaked intervals.
+- ✅ **Moto G in-app update silently fails (MainActivity.kt):**
+  - `setDestinationUri(Uri.fromFile())` throws `SecurityException` on Android 14+ for APK downloads → replaced with `setDestinationInExternalFilesDir()`.
+  - `setMimeType("application/vnd.android.package-archive")` blocked by Android 14+ OEM security policies before `enqueue()` → removed.
+  - Added `Log.e("CamNet", "downloadAndInstall exception", e)` so exceptions always appear in logcat regardless of Toast lifecycle.
+  - Added `canRequestPackageInstalls()` guard in `promptInstall()` with Settings redirect if not granted.
+  - Added `COLUMN_REASON` logging on `STATUS_FAILED` for future diagnostics.
+
+### Fixed (v1.118 — JS TDZ crash: motionAutoSnap/Flash/StillMins used before declaration)
+- ✅ **`motionAutoSnap`, `motionFlash`, `motionFlashStillMins` used before initialization — JS crashes on load (viewer.js):** `let motionAutoSnap/motionFlash/motionFlashStillMins` were declared inside the `// ── Motion detection ──` block at line ~1208, but `lsLoad()` assignments for all three ran at line ~130 (temporal dead zone). Same bug pattern as v1.86 (`alertSound/alertVibration/alertCooldown`). Fix: moved all three declarations to the top-of-file settings block (lines 35-37), alongside the other `let` settings variables, before any code runs. Duplicate stubs at the old location replaced with a single comment `// motionAutoSnap, motionFlash, motionFlashStillMins declared at top of file (TDZ fix)`.
+
+### Fixed (v1.96 — Solo Mode)
+- ✅ **Solo Mode: standalone single-phone security camera (no network required):**
+  - `public/solo.html` + `public/js/solo.js`: Self-contained mode, loaded from assets via `file://` base URL (no Ktor server needed).
+  - Two-layer motion detection: pixel-diff on 160×120 canvas (same SENS thresholds, consecutive-frame guard, polygon zone as viewer.js) + optional COCO-SSD AI (same lazy-load pattern, configurable confidence 0.1–0.9, same 8 class checkboxes).
+  - Torch strobe: Off / Steady / Slow (1 Hz, 500ms) / Fast (10 Hz, 50ms) via `track.applyConstraints({advanced:[{torch}]})`. Auto-off after configurable duration (10s/30s/1min/until off).
+  - Web Audio API alarm: Off / Beep (0.5s bursts at 880Hz every 1.5s) / Sustained tone (440Hz sine). No files, works offline.
+  - 5-min segment recording via MediaRecorder on local stream, saved to DCIM/CamNet via `AndroidBridge.saveVideo`. Record-on-motion toggle with configurable idle-stop (30s/1min/5min/never).
+  - Remote push via `AndroidBridge.sendWebhookNotification`: POSTs to ntfy.sh topic URL with Title/Priority headers over HttpURLConnection (background thread). Also fires local `AndroidBridge.fireMotionAlert` Android notification.
+  - Polygon zone editor (same ray-cast point-in-polygon implementation as viewer.js). All settings persisted to localStorage under `camnet.solo.` namespace.
+  - `AndroidBridge.startSolo()`: loads solo.html from assets, starts StreamingService foreground service (camera + wake lock). `AndroidBridge.sendWebhookNotification()`: ntfy/webhook HTTP POST, background thread.
+  - Home screen: "🎯 Solo Mode" button (purple, `#7c3aed` border). Back handler extended to treat `file://`/`data:` URLs as home-navigable. `VIBRATE` permission added to manifest.
 
 ### Fixed (v1.115 — Gradle 9.1.0 → 9.5.1 patch bump)
 - ✅ **Gradle 9.1.0 → 9.5.1 (build-apk.yml):** Current stable Gradle 9.x. AGP 9.0.1 supported through Gradle 9.5.x per Gradle compatibility matrix (tested through AGP 9.2.0-alpha05). 9.5.1 adds task provenance to error messages — failure messages now include "registered by plugin X" so failed task sources are traceable. Also includes automatic Wrapper download retry and numerous R8 and config-cache fixes vs 9.1.0. CI-only change; no Gradle build script changes required.
@@ -426,4 +480,4 @@ camnet/
 
 ---
 
-**Last Updated:** May 2026 (vNEXT — viewer.js TDZ fix + CLAUDE.md slim; v1.115 Gradle 9.5.1; v1.113 AGP 9.0.1 stack)
+**Last Updated:** May 2026 (post-v1.118 — Solo remote admin panel: heartbeat + ntfy command channel; S24 freeze fix; Moto G update fix; home screen polish)
