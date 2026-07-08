@@ -39,13 +39,15 @@ class MainActivity : AppCompatActivity() {
         })
         requestPermissions()
 
+        WebView.setWebContentsDebuggingEnabled(true)
+
         webView = WebView(this).also { setContentView(it) }
 
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             mediaPlaybackRequiresUserGesture = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             cacheMode = WebSettings.LOAD_NO_CACHE
         }
 
