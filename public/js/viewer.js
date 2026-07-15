@@ -360,6 +360,9 @@ function onCameraJoined(cameraId, name) {
   peers.set(cameraId, { pc, name, stream: null, recorder: null, motion: null, facingMode: null, torchOn: false, quality: 720, stealth: false, recordTarget: null, recDurationMs: 0, recStartTime: 0, recSegNum: 0, recBaseName: '', recChunks: [], recSegTimer: null, recDurationTimer: null, zone: null, lastMotionAt: 0, motionConsecutive: 0, motionFlashActive: false, motionFlashTimer: null, timelapse: null, audioSendTransceiver: null, dvrSegments: [], dvrRecorder: null, dvrSegTimer: null, dvrEnabled: false });
   addCameraCard(cameraId, name);
   updateCamCount();
+  if (window.AndroidBridge?.setSpeakerphoneOn) {
+    window.AndroidBridge.setSpeakerphoneOn(true);
+  }
 }
 
 function onCameraLeft(cameraId) {
@@ -375,6 +378,9 @@ function onCameraLeft(cameraId) {
   document.getElementById(`card-${cameraId}`)?.remove();
   updateCamCount();
   toggleEmptyState();
+  if (peers.size === 0 && window.AndroidBridge?.setSpeakerphoneOn) {
+    window.AndroidBridge.setSpeakerphoneOn(false);
+  }
 }
 
 function updateCamCount() {
@@ -1176,6 +1182,9 @@ function openDvrPlayback(cameraId) {
     row.textContent = `${ts}  (${ago}m ago, ${dur}s)${idx === 0 ? '  ← newest' : ''}`;
     row.style.cssText = 'padding:10px 14px;background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,255,255,0.1);border-radius:8px;color:#e2e8f0;font-size:13px;font-weight:600;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent';
     row.addEventListener('click', () => {
+      if (videoEl.src && videoEl.src.startsWith('blob:')) {
+        URL.revokeObjectURL(videoEl.src);
+      }
       const url = URL.createObjectURL(seg.blob);
       videoEl.src = url;
       videoEl.play();
@@ -1187,8 +1196,6 @@ function openDvrPlayback(cameraId) {
 
   // Auto-load most recent
   if (segs.length > 0) {
-    const url = URL.createObjectURL(segs[0].blob);
-    videoEl.src = url;
     list.querySelector('button')?.click();
   }
 
@@ -1199,7 +1206,12 @@ function openDvrPlayback(cameraId) {
     document.body.removeChild(overlay);
     showToast('📼 DVR stopped — footage cleared');
   });
-  closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+  closeBtn.addEventListener('click', () => {
+    if (videoEl.src && videoEl.src.startsWith('blob:')) {
+      URL.revokeObjectURL(videoEl.src);
+    }
+    document.body.removeChild(overlay);
+  });
   document.body.appendChild(overlay);
 }
 

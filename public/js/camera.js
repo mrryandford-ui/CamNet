@@ -290,6 +290,9 @@ function giveUpAndReturnToSetup(reason) {
   if (wakeLock)    { wakeLock.release().catch(() => {}); wakeLock = null; }
   stopKeepAlive();
   try { ws?.close(); } catch {}
+  if (window.AndroidBridge?.setSpeakerphoneOn) {
+    window.AndroidBridge.setSpeakerphoneOn(false);
+  }
   window.AndroidBridge?.stopStreaming();
   showSetupScreen();
   showError(reason);
@@ -478,9 +481,12 @@ async function _changeQuality(value) {
 
   await initMedia();
   if (pc) {
-    const newTrack = localStream?.getVideoTracks()[0];
-    const sender   = pc.getSenders().find(s => s.track?.kind === 'video');
-    if (sender && newTrack) await sender.replaceTrack(newTrack).catch(() => {});
+    const newVideo = localStream?.getVideoTracks()[0];
+    const newAudio = localStream?.getAudioTracks()[0];
+    for (const sender of pc.getSenders()) {
+      if (sender.track?.kind === 'video' && newVideo) await sender.replaceTrack(newVideo).catch(() => {});
+      if (sender.track?.kind === 'audio' && newAudio) await sender.replaceTrack(newAudio).catch(() => {});
+    }
     applyBitrate();
   }
 
@@ -704,6 +710,9 @@ function hangup() {
   if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
   stopKeepAlive();
   ws?.close();
+  if (window.AndroidBridge?.setSpeakerphoneOn) {
+    window.AndroidBridge.setSpeakerphoneOn(false);
+  }
   // Native app: stop foreground service
   window.AndroidBridge?.stopStreaming();
   showSetupScreen();
@@ -738,6 +747,9 @@ function showLiveScreen() {
   startKeepAlive();
   // Native app: start foreground service so camera stays alive with screen off
   window.AndroidBridge?.startStreaming();
+  if (window.AndroidBridge?.setSpeakerphoneOn) {
+    window.AndroidBridge.setSpeakerphoneOn(true);
+  }
 }
 
 function showSetupScreen() {
@@ -906,6 +918,13 @@ document.addEventListener('visibilitychange', async () => {
   if (!wakeLock) await requestWakeLock();
   if (_audioCtx?.state === 'suspended') _audioCtx.resume().catch(() => {});
   if (_keepAliveAudio?.paused)          _keepAliveAudio.play().catch(() => {});
+  if (window.AndroidBridge?.setSpeakerphoneOn) {
+    window.AndroidBridge.setSpeakerphoneOn(true);
+  }
+  const monAudio = document.getElementById('monitorAudio');
+  if (monAudio && monAudio.paused && monAudio.srcObject) {
+    monAudio.play().catch(() => {});
+  }
   const vTrack = localStream.getVideoTracks()[0];
   if (vTrack && vTrack.readyState === 'ended') {
     try {

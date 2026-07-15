@@ -199,6 +199,7 @@ class CamNetServer(port: Int, private val assets: AssetManager, private val cont
                     .ifEmpty { "Camera ${room.cameraCounter.incrementAndGet()}" }
                 room.cameras.entries.firstOrNull { it.value.cameraName == name }?.let { stale ->
                     room.cameras.remove(stale.key)
+                    runCatching { stale.value.session.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Name collision")) }
                     room.viewer?.let { v -> trySend(v, jObj("type" to "camera-left", "cameraId" to stale.key)) }
                 }
                 state.roomId = rId; state.role = "camera"; state.cameraName = name

@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.provider.Settings
 import android.webkit.JavascriptInterface
 import androidx.core.app.NotificationCompat
@@ -365,6 +366,26 @@ class AndroidBridge(
             android.util.Log.e("CamNet", "saveSnapshot failed: $e")
             (context as? MainActivity)?.runOnUiThread {
                 android.widget.Toast.makeText(context, "Could not save photo", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    /** Enables or disables the speakerphone routing for VoIP/WebRTC calls. */
+    @JavascriptInterface
+    fun setSpeakerphoneOn(on: Boolean) {
+        (context as? MainActivity)?.runOnUiThread {
+            try {
+                val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                if (on) {
+                    am.mode = AudioManager.MODE_IN_COMMUNICATION
+                    am.isSpeakerphoneOn = true
+                } else {
+                    am.mode = AudioManager.MODE_NORMAL
+                    am.isSpeakerphoneOn = false
+                }
+                android.util.Log.i("CamNet", "Speakerphone set to $on")
+            } catch (e: Exception) {
+                android.util.Log.e("CamNet", "Failed to set speakerphone: $e")
             }
         }
     }

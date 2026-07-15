@@ -284,6 +284,12 @@ class MainActivity : AppCompatActivity() {
         // Clear back-stack so the Monitor → Back → Camera flow always renders a
         // fresh screen and never resurrects a stale data:// page from history.
         webView.clearHistory()
+        try {
+            val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            am.mode = android.media.AudioManager.MODE_NORMAL
+            am.isSpeakerphoneOn = false
+            android.util.Log.i("CamNet", "Speakerphone reset to off (showHome)")
+        } catch (_: Exception) {}
         webView.loadDataWithBaseURL("file:///android_asset/", homeHtml(), "text/html", "UTF-8", null)
     }
 
@@ -522,6 +528,13 @@ class MainActivity : AppCompatActivity() {
     // ── Permissions ───────────────────────────────────────────────
     private fun isPrivateHost(host: String): Boolean {
         if (host == "localhost" || host == "127.0.0.1") return true
+        if (host.contains(":")) {
+            val clean = host.removePrefix("[").removeSuffix("]")
+            if (clean == "::1" || clean == "0:0:0:0:0:0:0:1") return true
+            if (clean.startsWith("fe80", ignoreCase = true)) return true // Link-local
+            if (clean.startsWith("fc", ignoreCase = true) || clean.startsWith("fd", ignoreCase = true)) return true // ULA (fc00::/7)
+            return false
+        }
         val parts = host.split(".").mapNotNull { it.toIntOrNull() }
         if (parts.size != 4) return false
         return parts[0] == 10 ||
