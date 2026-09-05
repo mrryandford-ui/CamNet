@@ -132,7 +132,7 @@ globalMotion          = lsLoad('globalMotion', true);   // default ON — Sprint
 motionSens            = lsLoad('motionSens', 'mid');
 motionAutoSnap        = lsLoad('motionAutoSnap', false);
 motionFlash           = lsLoad('motionFlash', false);
-motionFlashStillMins  = lsLoad('motionFlashStillMins', 2);
+motionFlashStillMins  = 2; // Hardcoded reliable default
 muteAll               = lsLoad('muteAll', false);
 mirrorFront           = lsLoad('mirrorFront', true);
 currentLayout         = lsLoad('currentLayout', 'l-auto');
@@ -2339,18 +2339,8 @@ document.getElementById('motionAutoSnapToggle').addEventListener('click', functi
 document.getElementById('motionFlashToggle').addEventListener('click', function() {
   motionFlash = !motionFlash;
   this.classList.toggle('on', motionFlash);
-  lsSave('motionFlash', motionFlash);
-  document.getElementById('motionFlashStillRow').style.display = motionFlash ? '' : 'none';
-});
-
-document.getElementById('motionFlashStillSeg').addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-mins]');
-  if (!btn) return;
-  document.querySelectorAll('#motionFlashStillSeg .seg-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  motionFlashStillMins = parseInt(btn.dataset.mins, 10);
-  lsSave('motionFlashStillMins', motionFlashStillMins);
-});
+    lsSave('motionFlash', motionFlash);
+  });
 
 document.getElementById('motionSensSeg').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-sens]');

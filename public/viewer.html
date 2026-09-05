@@ -120,32 +120,29 @@
       <button class="toggle" id="globalMotionToggle" aria-label="Motion detection"></button>
     </div>
     <div class="panel-row" id="motionSensRow">
-      <span class="panel-label">Motion sensitivity</span>
+      <span class="panel-label">Sensitivity</span>
       <div class="seg-ctrl" id="motionSensSeg">
         <button class="seg-btn" data-sens="low">Low</button>
         <button class="seg-btn active" data-sens="mid">Mid</button>
         <button class="seg-btn" data-sens="high">High</button>
       </div>
     </div>
+
+    <div class="panel-section-heading">Motion Response</div>
+
     <div class="panel-row">
-      <span class="panel-label">Auto-snapshot on motion</span>
-      <button class="toggle" id="motionAutoSnapToggle" aria-label="Auto-snapshot on motion"></button>
+      <span class="panel-label">Auto-save snapshots</span>
+      <button class="toggle" id="motionAutoSnapToggle" aria-label="Auto-snapshot"></button>
     </div>
     <div class="panel-row">
       <span class="panel-label">Flash on motion</span>
       <button class="toggle" id="motionFlashToggle" aria-label="Flash on motion"></button>
     </div>
-    <div class="panel-row" id="motionFlashStillRow" style="display:none">
-      <span class="panel-label">Flash stays on for</span>
-      <div class="seg-ctrl" id="motionFlashStillSeg">
-        <button class="seg-btn" data-mins="1">1 min</button>
-        <button class="seg-btn active" data-mins="2">2 min</button>
-        <button class="seg-btn" data-mins="5">5 min</button>
-        <button class="seg-btn" data-mins="10">10 min</button>
-      </div>
-    </div>
+
+    <div class="panel-section-heading">Experimental AI Filter</div>
+
     <div class="panel-row">
-      <span class="panel-label">Smart detection (AI)</span>
+      <span class="panel-label">Smart AI Filter</span>
       <button class="toggle" id="smartDetectionToggle" aria-label="Smart detection"></button>
     </div>
     <div class="panel-row" id="smartDetectionStatusRow" style="display:none">
