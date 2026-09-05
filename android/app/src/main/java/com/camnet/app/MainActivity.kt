@@ -434,7 +434,10 @@ class MainActivity : AppCompatActivity() {
           .scan-cancel{background:transparent;border:1.5px solid #334155;color:#94a3b8;
                        font-size:15px;padding:12px 32px;border-radius:12px;width:auto}
         </style></head><body>
-        <h1>📷 Join Session</h1>
+        <div style="display:flex;align-items:center;width:100%;margin-bottom:8px">
+          <button onclick="AndroidBridge.resetServer()" style="background:none;color:#6366f1;font-size:32px;padding:0 15px 0 0;width:auto;cursor:pointer">‹</button>
+          <h1 style="flex-grow:1;text-align:center;margin-right:32px">📷 Join Session</h1>
+        </div>
         <p>Scan the QR code on the Monitor phone, or enter the IP manually</p>
         <button class="outline" id="scanBtn" onclick="startScan()">
           &#x2317;&nbsp; Scan QR Code
