@@ -198,13 +198,21 @@ async function initMedia() {
             aStream.getAudioTracks().forEach(t => vStream.addTrack(t));
           } catch (e4) {
             audioErr4 = e4.name + ': ' + e4.message;
+            // Tier 5: last resort — "naked" audio with a short delay in case hardware was transitioning
+            await new Promise(r => setTimeout(r, 800));
+            try {
+              const aStream = await navigator.mediaDevices.getUserMedia({ audio: {} });
+              aStream.getAudioTracks().forEach(t => vStream.addTrack(t));
+            } catch (e5) {
+              console.warn('Final audio fallback failed:', e5);
+            }
           }
         }
         localStream = vStream;
         micEnabled = localStream.getAudioTracks().length > 0;
         if (!micEnabled) {
           console.warn('Mic fallback exhausted:', { audioErr1, audioErr2, audioErr3, audioErr4 });
-          showToast('Mic unavailable — check app permissions');
+          showToast('Mic unavailable — try closing other apps');
         }
       }
     }

@@ -1,0 +1,4 @@
+- `[x]` Update `CamNetServer.kt` (bind to localhost, exempt local IP from rate limit)
+- `[x]` Update `SslProxy.kt` (resilient TCP bridge)
+- `[x]` Update `network_security_config.xml` (add 127.0.0.1 to trusted domains)
+- `[x]` Update `AndroidBridge.kt` (improve server polling)

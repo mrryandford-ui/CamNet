@@ -2576,7 +2576,13 @@ async function toggleMonitorMic() {
   } else {
     // Turn on: capture mic, send to all connected cameras
     try {
-      monitorAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        monitorAudioStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      } catch (e1) {
+        console.warn('Monitor mic Tier 1 failed, trying basic:', e1);
+        monitorAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
       monitorMicEnabled  = true;
       const track = monitorAudioStream.getAudioTracks()[0];
       peers.forEach(peer => {
@@ -2588,7 +2594,7 @@ async function toggleMonitorMic() {
       btn.title = 'Monitor mic ON — tap to mute';
       showToast('🎤 Monitor mic on — cameras can hear you');
     } catch (e) {
-      showToast('Mic access denied — check browser permissions');
+      showToast('Mic access denied or busy — check permissions');
       console.warn('Monitor mic failed:', e);
     }
   }
