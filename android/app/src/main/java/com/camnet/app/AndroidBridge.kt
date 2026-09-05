@@ -215,6 +215,7 @@ class AndroidBridge(
                     // but the background thread may not have bound the port yet.
                     // Confirm the SSL port is actually accepting before loading.
                     try {
+                        // Ktor is now explicitly bound to 127.0.0.1
                         java.net.Socket("127.0.0.1", CamNetServer.SSL_PORT).use {}
                         // Pass LAN IP in URL fragment so viewer.js can use it directly,
                         // bypassing fetch('/api/info') which fails on Samsung WebView
@@ -294,18 +295,22 @@ class AndroidBridge(
         }
     }
 
-    /** Starts Monitor mode and auto-opens the Solo Admin panel (viewer.html#solo-admin). */
+    /** Starts Monitor mode and auto-opens the Solo Admin panel. */
     @JavascriptInterface
     fun openSoloAdmin() {
         startMonitor()   // starts Ktor server + loads viewer.html
-        // viewer.js detects #solo-admin in the hash and opens the panel on load
-        // The hash is appended by startMonitor() → loadUrl below via the existing fragment mechanism.
-        // We post a delayed JS injection to open the panel after the page loads.
+        // Retry-click the soloAdminBtn every 500 ms until the page has loaded it
+        // (the 3-second blind wait was too short when the server was cold-starting).
         val activity = context as? MainActivity ?: return
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            activity.webView.evaluateJavascript(
-                "if(typeof openPanel==='function') openPanel('soloAdminPanel');", null)
-        }, 3_000)
+            activity.webView.evaluateJavascript("""
+                (function retry(n) {
+                  var btn = document.getElementById('soloAdminBtn');
+                  if (btn) { btn.click(); }
+                  else if (n > 0) { setTimeout(function(){ retry(n-1); }, 500); }
+                })(20);
+            """.trimIndent(), null)
+        }, 1_000)
     }
 
     /**

@@ -52,8 +52,9 @@ class CamNetServer(port: Int, private val assets: AssetManager, private val cont
     private val joinLock = Any()
 
     private fun isRateLimited(ip: String): Boolean = synchronized(joinLock) {
+        if (ip == "127.0.0.1" || ip == "localhost" || ip == "::1") return false
         val now   = System.currentTimeMillis()
-        val max   = 10; val window = 60_000L
+        val max   = 20; val window = 60_000L
         val list  = joinAttempts.getOrPut(ip) { mutableListOf() }
         list.removeAll { it < now - window }
         if (list.size >= max) return true
@@ -81,7 +82,7 @@ class CamNetServer(port: Int, private val assets: AssetManager, private val cont
         assets.open("camnet-ssl.p12").use { ks.load(it, "camnet-ssl".toCharArray()) }
     }
 
-    private val engine = embeddedServer(CIO, port = port) {
+    private val engine = embeddedServer(CIO, host = "127.0.0.1", port = port) {
         install(WebSockets) {
             pingPeriod = 15.seconds
             timeout    = 60.seconds

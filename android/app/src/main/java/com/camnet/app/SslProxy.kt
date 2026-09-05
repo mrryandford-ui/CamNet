@@ -55,15 +55,26 @@ class SslProxy(
 
     private fun bridge(ssl: java.net.Socket) {
         try {
+            ssl.soTimeout = 30_000
             java.net.Socket("127.0.0.1", backendPort).use { local ->
+                local.soTimeout = 30_000
                 // Two threads: one per direction. copyTo blocks until EOF.
-                val upstream = thread(isDaemon = true) {
-                    try { ssl.getInputStream().copyTo(local.getOutputStream()) } catch (_: Exception) {}
-                    runCatching { local.shutdownOutput() }
+                val upstream = thread(isDaemon = true, name = "camnet-ssl-up") {
+                    try {
+                        val out = local.getOutputStream()
+                        ssl.getInputStream().copyTo(out)
+                        out.flush()
+                    } catch (_: Exception) {}
+                    finally { runCatching { local.shutdownOutput() } }
                 }
-                try { local.getInputStream().copyTo(ssl.getOutputStream()) } catch (_: Exception) {}
-                runCatching { ssl.shutdownOutput() }
-                upstream.join(5_000)
+                try {
+                    val out = ssl.getOutputStream()
+                    local.getInputStream().copyTo(out)
+                    out.flush()
+                } catch (_: Exception) {}
+                finally { runCatching { ssl.shutdownOutput() } }
+                // Wait briefly for the upstream thread to finish after local input is closed
+                upstream.join(2_000)
             }
         } catch (e: Exception) {
             Log.w("CamNet", "SSL bridge: $e")

@@ -23,21 +23,18 @@ let cameraCounter = 0;
 let monitorAudioStream  = null; // getUserMedia audio stream from monitor's mic
 let monitorMicEnabled   = false;
 
-let globalMotion = false;
-let motionSens = 'mid';
-let motionAutoSnap       = false; // declared here to avoid TDZ — lsLoad assigns at boot (line ~130)
+let globalMotion         = false;
+let motionSens           = 'mid';
+let motionAutoSnap       = false;
 let motionFlash          = false;
 let motionFlashStillMins = 2;
-let muteAll = false;
-let mirrorFront = true;
-let currentLayout = 'l-auto';
-let photoQuality = '720'; // '480' | '720' | '1080' | 'source'
-let alertSound    = true;
-let alertVibration = true;
-let alertCooldown  = 30; // seconds — must be declared before lsLoad rehydration at boot
-let motionAutoSnap       = false; // declared here to avoid TDZ — lsLoad assigns at boot (line ~130)
-let motionFlash          = false;
-let motionFlashStillMins = 2;
+let muteAll              = false;
+let mirrorFront          = true;
+let currentLayout        = 'l-auto';
+let photoQuality         = '720'; // '480' | '720' | '1080' | 'source'
+let alertSound           = true;
+let alertVibration       = true;
+let alertCooldown        = 30; // seconds
 
 // ── Rough JPEG + video size tables for picker estimates ────────
 // Values are byte/bit averages — JPEG size varies a lot with scene content.
@@ -215,7 +212,7 @@ function connectWS() {
   const fragParams = new URLSearchParams(location.hash.slice(1));
   const wsPort = fragParams.get('wsport');
   const wsUrl  = (wsPort && window.AndroidBridge)
-    ? `ws://localhost:${wsPort}`
+    ? `ws://127.0.0.1:${wsPort}`
     : (location.protocol === 'https:' ? 'wss:' : 'ws:') + `//${location.host}`;
 
   console.log('[CamNet] WS connecting to:', wsUrl);
