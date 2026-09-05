@@ -359,27 +359,6 @@
         <button class="seg-btn" data-sens="low">Low</button>
         <button class="seg-btn active" data-sens="mid">Mid</button>
         <button class="seg-btn" data-sens="high">High</button>
-        <button class="seg-btn" data-sens="ultra">Ultra</button>
-      </div>
-    </div>
-
-    <div class="panel-row">
-      <span class="panel-label">Consecutive frames</span>
-      <div class="seg-ctrl" id="soloConsecSeg">
-        <button class="seg-btn" data-consec="1">1</button>
-        <button class="seg-btn" data-consec="2">2</button>
-        <button class="seg-btn active" data-consec="3">3</button>
-        <button class="seg-btn" data-consec="5">5</button>
-      </div>
-    </div>
-
-    <div class="panel-row">
-      <span class="panel-label">Alert cooldown</span>
-      <div class="seg-ctrl" id="soloCooldownSeg">
-        <button class="seg-btn" data-secs="10">10s</button>
-        <button class="seg-btn active" data-secs="30">30s</button>
-        <button class="seg-btn" data-secs="60">1m</button>
-        <button class="seg-btn" data-secs="300">5m</button>
       </div>
     </div>
 
@@ -388,83 +367,51 @@
       <button class="btn btn-outline" id="soloZoneBtn" style="font-size:13px;padding:8px 14px">Edit zone</button>
     </div>
 
-    <div class="panel-section-heading">AI Detection (COCO-SSD)</div>
+    <div class="panel-section-heading">Experimental AI Filter</div>
 
     <div class="panel-row">
-      <span class="panel-label">AI detection</span>
+      <span class="panel-label">Smart AI Filter</span>
       <button class="toggle" id="soloSmartToggle" aria-label="AI detection"></button>
     </div>
     <div class="panel-row" id="soloSmartStatusRow" style="display:none">
-      <span class="panel-label" style="font-size:11px;color:var(--text-muted);text-transform:none;letter-spacing:0">AI status</span>
-      <span id="soloSmartStatus" style="font-size:12px;color:var(--accent);font-weight:600">—</span>
-    </div>
-    <div class="panel-row" id="soloConfidenceRow" style="display:none">
-      <span class="panel-label">Min confidence</span>
-      <div class="confidence-row" style="flex:1;margin-left:12px">
-        <input type="range" id="soloConfidenceSlider" min="10" max="90" value="50" step="5">
-        <span class="confidence-val" id="soloConfidenceVal">50%</span>
-      </div>
+      <span class="panel-label" style="font-size:11px;color:var(--text-muted);text-transform:none;letter-spacing:0">Status</span>
+      <span id="soloSmartStatus" style="font-size:12px;color:var(--accent);font-weight:600">Off</span>
     </div>
     <div class="panel-row" id="soloClassesRow" style="display:none;flex-direction:column;align-items:stretch;gap:10px">
-      <span class="panel-label">Alert on these objects</span>
+      <span class="panel-label">Detect these objects</span>
       <div id="soloClassesContainer" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      <span style="font-size:10px;color:var(--text-muted);line-height:1.4">AI requires internet connection for initial model load.</span>
     </div>
 
-    <div class="panel-section-heading">Flash on Motion</div>
+    <div class="panel-section-heading">Active Deterrence</div>
 
     <div class="panel-row">
-      <span class="panel-label">Flash mode</span>
-      <div class="seg-ctrl" id="soloMotionFlashModeSeg">
-        <button class="seg-btn active" data-fmode="off">Off</button>
-        <button class="seg-btn" data-fmode="steady">Steady</button>
-        <button class="seg-btn" data-fmode="slow">Slow</button>
-        <button class="seg-btn" data-fmode="fast">Fast</button>
-      </div>
-    </div>
-    <div class="panel-row" id="soloFlashDurRow">
-      <span class="panel-label">Flash duration</span>
-      <div class="seg-ctrl" id="soloFlashDurSeg">
-        <button class="seg-btn" data-fdur="10">10s</button>
-        <button class="seg-btn active" data-fdur="30">30s</button>
-        <button class="seg-btn" data-fdur="60">1min</button>
-        <button class="seg-btn" data-fdur="0">Until off</button>
+      <span class="panel-label">Response on motion</span>
+      <div class="seg-ctrl" id="soloDeterrenceSeg">
+        <button class="seg-btn active" data-mode="none">Silent</button>
+        <button class="seg-btn" data-mode="flash">Flash</button>
+        <button class="seg-btn" data-mode="alarm">Alarm</button>
+        <button class="seg-btn" data-mode="both">Both</button>
       </div>
     </div>
 
-    <div class="panel-section-heading">Audio Alarm</div>
+    <div class="panel-section-heading">Local Recording</div>
 
     <div class="panel-row">
-      <span class="panel-label">Alarm mode</span>
-      <div class="seg-ctrl" id="soloAlarmModeSeg">
-        <button class="seg-btn active" data-alarm="off">Off</button>
-        <button class="seg-btn" data-alarm="beep">Beep</button>
-        <button class="seg-btn" data-alarm="tone">Sustained</button>
-      </div>
-    </div>
-
-    <div class="panel-section-heading">Recording</div>
-
-    <div class="panel-row">
-      <span class="panel-label">On motion, save</span>
-      <div class="seg-ctrl" id="soloMotionCaptureSeg">
-        <button class="seg-btn active" data-capture="none">Off</button>
-        <button class="seg-btn" data-capture="photo">Photo</button>
-        <button class="seg-btn" data-capture="video">Video</button>
-        <button class="seg-btn" data-capture="both">Both</button>
-      </div>
+      <span class="panel-label">Auto-save snapshots</span>
+      <button class="toggle" id="soloAutoSnapToggle" aria-label="Auto-save snapshots"></button>
     </div>
 
     <div class="panel-row">
-      <span class="panel-label">Record on motion (manual)</span>
+      <span class="panel-label">Auto-record video</span>
       <button class="toggle" id="soloRecordOnMotionToggle" aria-label="Record on motion"></button>
     </div>
     <div class="panel-row" id="soloRecordIdleRow" style="display:none">
-      <span class="panel-label">Stop recording after</span>
+      <span class="panel-label">Stop after idle</span>
       <div class="seg-ctrl" id="soloRecordIdleSeg">
         <button class="seg-btn" data-idle="30">30s</button>
-        <button class="seg-btn active" data-idle="60">1min</button>
-        <button class="seg-btn" data-idle="300">5min</button>
-        <button class="seg-btn" data-idle="0">Never</button>
+        <button class="seg-btn active" data-idle="60">1m</button>
+        <button class="seg-btn" data-idle="300">5m</button>
       </div>
     </div>
 

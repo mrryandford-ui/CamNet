@@ -85,16 +85,14 @@ let alarmGain      = null;
 
 // ── Persisted settings ─────────────────────────────────────────
 let sens           = lsLoad('sens',        'mid');
-let consec         = lsLoad('consec',       3);
+let consec         = 3; // hardcoded for reliability
 let cooldownSecs   = lsLoad('cooldown',    30);
 let smartEnabled   = lsLoad('smartEnabled', false);
 let smartClasses   = new Set(lsLoad('smartClasses', ['person']));
-let smartConfidence = lsLoad('smartConfidence', 0.5);
-let motionFlashMode = lsLoad('motionFlashMode', 'off');
-let motionFlashDur  = lsLoad('motionFlashDur',   30);
-alarmMode          = lsLoad('alarmMode',    'off');
+let smartConfidence = 0.5; // hardcoded floor
+let deterrenceMode  = lsLoad('deterrenceMode', 'none'); // 'none'|'flash'|'alarm'|'both'
+let autoSnapEnabled = lsLoad('autoSnapEnabled', false);
 recordOnMotion     = lsLoad('recordOnMotion', false);
-let motionCaptureMode  = lsLoad('motionCaptureMode', 'none'); // 'none'|'photo'|'video'|'both'
 let recordIdleSecs = lsLoad('recordIdleSecs', 60);
 let ntfyUrl        = lsLoad('ntfyUrl',      '');
 
@@ -338,16 +336,18 @@ function onMotionDetected(detectedClass) {
     clearTimeout(recordIdleTimer); recordIdleTimer = null;
   }
 
-  // Flash on motion
-  if (motionFlashMode !== 'off') triggerMotionFlash();
+  // Active deterrence
+  if (deterrenceMode === 'flash' || deterrenceMode === 'both') triggerMotionFlash();
+  if (deterrenceMode === 'alarm' || deterrenceMode === 'both') triggerAlarm();
 
-  // Audio alarm
-  if (alarmMode !== 'off') triggerAlarm();
+  // Auto-save snapshot
+  if (autoSnapEnabled) takeSnapshot();
 
-  // (motion-triggered capture handled above)
-  if (recordOnMotion && recordActive && recordIdleSecs > 0) {
-    clearTimeout(recordIdleTimer);
-    recordIdleTimer = setTimeout(() => {
+  // Motion-triggered recording
+  if (recordOnMotion && !recordActive) {
+    startRecording();
+    clearTimeout(recordIdleTimer); recordIdleTimer = null;
+  }
       stopRecordingIfActive();
       showToast('Recording stopped — no motion');
     }, recordIdleSecs * 1000);
@@ -1075,26 +1075,17 @@ function syncSettingsPanel() {
   // Smart toggle + rows
   document.getElementById('soloSmartToggle').classList.toggle('on', smartEnabled);
   document.getElementById('soloSmartStatusRow').style.display = smartEnabled ? '' : 'none';
-  document.getElementById('soloConfidenceRow').style.display  = smartEnabled ? '' : 'none';
   document.getElementById('soloClassesRow').style.display     = smartEnabled ? '' : 'none';
-  // Confidence slider
-  const slid = document.getElementById('soloConfidenceSlider');
-  slid.value = Math.round(smartConfidence * 100);
-  document.getElementById('soloConfidenceVal').textContent = slid.value + '%';
   // Classes checkboxes
   buildClassesUI();
-  // Motion flash mode
-  document.querySelectorAll('#soloMotionFlashModeSeg .seg-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.fmode === motionFlashMode));
-  // Flash duration
-  document.querySelectorAll('#soloFlashDurSeg .seg-btn').forEach(b =>
-    b.classList.toggle('active', parseInt(b.dataset.fdur, 10) === motionFlashDur));
-  // Alarm mode
-  document.querySelectorAll('#soloAlarmModeSeg .seg-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.alarm === alarmMode));
-  // Motion capture format
-  document.querySelectorAll('#soloMotionCaptureSeg .seg-btn').forEach(b =>
-    b.classList.toggle('active', b.dataset.capture === motionCaptureMode));
+
+  // Deterrence
+  document.querySelectorAll('#soloDeterrenceSeg .seg-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.mode === deterrenceMode));
+
+  // Snapshots
+  document.getElementById('soloAutoSnapToggle').classList.toggle('on', autoSnapEnabled);
+
   // Record on motion (manual)
   document.getElementById('soloRecordOnMotionToggle').classList.toggle('on', recordOnMotion);
   document.getElementById('soloRecordIdleRow').style.display = recordOnMotion ? '' : 'none';
@@ -1155,7 +1146,6 @@ document.getElementById('soloSmartToggle').addEventListener('click', async () =>
   lsSave('smartEnabled', smartEnabled);
   document.getElementById('soloSmartToggle').classList.toggle('on', smartEnabled);
   document.getElementById('soloSmartStatusRow').style.display = smartEnabled ? '' : 'none';
-  document.getElementById('soloConfidenceRow').style.display  = smartEnabled ? '' : 'none';
   document.getElementById('soloClassesRow').style.display     = smartEnabled ? '' : 'none';
   updateMotionIndicator();
   if (smartEnabled && !soloCocoModel) {
@@ -1163,32 +1153,19 @@ document.getElementById('soloSmartToggle').addEventListener('click', async () =>
   }
 });
 
-document.getElementById('soloConfidenceSlider').addEventListener('input', e => {
-  smartConfidence = parseInt(e.target.value, 10) / 100;
-  lsSave('smartConfidence', smartConfidence);
-  document.getElementById('soloConfidenceVal').textContent = e.target.value + '%';
-});
-
-document.getElementById('soloMotionFlashModeSeg').addEventListener('click', e => {
+document.getElementById('soloDeterrenceSeg').addEventListener('click', e => {
   const b = e.target.closest('.seg-btn'); if (!b) return;
-  motionFlashMode = b.dataset.fmode;
-  lsSave('motionFlashMode', motionFlashMode);
-  document.querySelectorAll('#soloMotionFlashModeSeg .seg-btn').forEach(x => x.classList.toggle('active', x === b));
-});
-
-document.getElementById('soloFlashDurSeg').addEventListener('click', e => {
-  const b = e.target.closest('.seg-btn'); if (!b) return;
-  motionFlashDur = parseInt(b.dataset.fdur, 10);
-  lsSave('motionFlashDur', motionFlashDur);
-  document.querySelectorAll('#soloFlashDurSeg .seg-btn').forEach(x => x.classList.toggle('active', x === b));
-});
-
-document.getElementById('soloAlarmModeSeg').addEventListener('click', e => {
-  const b = e.target.closest('.seg-btn'); if (!b) return;
-  alarmMode = b.dataset.alarm;
-  lsSave('alarmMode', alarmMode);
-  document.querySelectorAll('#soloAlarmModeSeg .seg-btn').forEach(x => x.classList.toggle('active', x === b));
+  deterrenceMode = b.dataset.mode;
+  lsSave('deterrenceMode', deterrenceMode);
+  document.querySelectorAll('#soloDeterrenceSeg .seg-btn').forEach(x => x.classList.toggle('active', x === b));
+  updateFlashModeBtn();
   updateAlarmBtn();
+});
+
+document.getElementById('soloAutoSnapToggle').addEventListener('click', () => {
+  autoSnapEnabled = !autoSnapEnabled;
+  lsSave('autoSnapEnabled', autoSnapEnabled);
+  document.getElementById('soloAutoSnapToggle').classList.toggle('on', autoSnapEnabled);
 });
 
 document.getElementById('soloRecordOnMotionToggle').addEventListener('click', () => {
@@ -1196,13 +1173,6 @@ document.getElementById('soloRecordOnMotionToggle').addEventListener('click', ()
   lsSave('recordOnMotion', recordOnMotion);
   document.getElementById('soloRecordOnMotionToggle').classList.toggle('on', recordOnMotion);
   document.getElementById('soloRecordIdleRow').style.display = recordOnMotion ? '' : 'none';
-});
-
-document.getElementById('soloMotionCaptureSeg').addEventListener('click', e => {
-  const b = e.target.closest('.seg-btn'); if (!b) return;
-  motionCaptureMode = b.dataset.capture;
-  lsSave('motionCaptureMode', motionCaptureMode);
-  document.querySelectorAll('#soloMotionCaptureSeg .seg-btn').forEach(x => x.classList.toggle('active', x === b));
 });
 
 document.getElementById('soloRecordIdleSeg').addEventListener('click', e => {
