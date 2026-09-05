@@ -159,56 +159,51 @@ async function initMedia() {
 
     let audioErr1, audioErr2, audioErr3, audioErr4;
 
-    // Tier 1: ideal — specific audio processing constraints
+    // Tier 1: Separate audio capture first (often avoids hardware race conditions)
     try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video, audio: { echoCancellation: true, noiseSuppression: true }
-      });
+      const aStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const vStream = await navigator.mediaDevices.getUserMedia({ video });
+      localStream = vStream;
+      aStream.getAudioTracks().forEach(t => localStream.addTrack(t));
     } catch (e1) {
       audioErr1 = e1.name + ': ' + e1.message;
-      // Tier 2: basic audio, let device choose processing
+      // Tier 2: Basic audio first
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video, audio: true });
+        const aStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        await new Promise(r => setTimeout(r, 500)); // brief pause for hardware
+        const vStream = await navigator.mediaDevices.getUserMedia({ video });
+        localStream = vStream;
+        aStream.getAudioTracks().forEach(t => localStream.addTrack(t));
       } catch (e2) {
         audioErr2 = e2.name + ': ' + e2.message;
-        // Tier 3: separate video + audio calls (avoids combined-constraint rejection)
-        let vStream;
+        // Tier 3: Ideal combined call (standard approach)
         try {
-          vStream = await navigator.mediaDevices.getUserMedia({ video });
-        } catch (e5) {
-          // Video also unavailable (hardware locked / NotReadableError).
-          // Don't block the join — proceed with no stream so the WS session
-          // can still connect. User can retry camera from the live screen.
-          const msg = 'Camera+mic unavailable (' + e5.name + '). Joining without stream.';
-          console.warn('[CamNet]', msg, { audioErr1, audioErr2, e5: e5.message });
-          try { window.AndroidBridge?.logDiagnostic?.(msg); } catch (_) {}
-          showToast('Camera unavailable — joining without stream');
-          micEnabled = false;
-          localStream = null;
-          return; // exit try block; finally resets mediaBusy
-        }
-        try {
-          const aStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          aStream.getAudioTracks().forEach(t => vStream.addTrack(t));
+          localStream = await navigator.mediaDevices.getUserMedia({
+            video, audio: { echoCancellation: true, noiseSuppression: true }
+          });
         } catch (e3) {
           audioErr3 = e3.name + ': ' + e3.message;
-          // Tier 4: minimal audio constraints
+          // Tier 4: Separate video first, then simple audio
+          let vStream;
           try {
-            const aStream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000 } });
+            vStream = await navigator.mediaDevices.getUserMedia({ video });
+          } catch (e5) {
+            const msg = 'Camera unavailable (' + e5.name + ')';
+            console.warn('[CamNet]', msg);
+            showToast(msg);
+            micEnabled = false; localStream = null; return;
+          }
+          try {
+            await new Promise(r => setTimeout(r, 800));
+            const aStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             aStream.getAudioTracks().forEach(t => vStream.addTrack(t));
           } catch (e4) {
             audioErr4 = e4.name + ': ' + e4.message;
-            // Tier 5: last resort — "naked" audio with a short delay in case hardware was transitioning
-            await new Promise(r => setTimeout(r, 800));
-            try {
-              const aStream = await navigator.mediaDevices.getUserMedia({ audio: {} });
-              aStream.getAudioTracks().forEach(t => vStream.addTrack(t));
-            } catch (e5) {
-              console.warn('Final audio fallback failed:', e5);
-            }
           }
+          localStream = vStream;
         }
-        localStream = vStream;
+      }
+    }
         micEnabled = localStream.getAudioTracks().length > 0;
         if (!micEnabled) {
           console.warn('Mic fallback exhausted:', { audioErr1, audioErr2, audioErr3, audioErr4 });

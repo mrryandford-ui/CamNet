@@ -324,8 +324,8 @@ class MainActivity : AppCompatActivity() {
         <style>
           *{box-sizing:border-box;margin:0;padding:0}
           body{background:#090910;color:#f1f5f9;font-family:-apple-system,sans-serif;
-               display:flex;flex-direction:column;align-items:center;justify-content:center;
-               min-height:100vh;padding:32px 24px;gap:16px}
+               display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+               min-height:100vh;padding:40px 24px;gap:16px;overflow-y:auto}
           h1{font-size:32px;font-weight:800;letter-spacing:-0.5px}
           .tagline{color:#64748b;font-size:14px;text-align:center;margin-bottom:8px}
           .btn{display:block;width:100%;padding:18px;border:none;border-radius:16px;
@@ -402,8 +402,8 @@ class MainActivity : AppCompatActivity() {
         <style>
           *{box-sizing:border-box;margin:0;padding:0}
           body{background:#090910;color:#f1f5f9;font-family:-apple-system,sans-serif;
-               display:flex;flex-direction:column;align-items:center;justify-content:center;
-               min-height:100vh;padding:32px 24px;gap:16px}
+               display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+               min-height:100vh;padding:40px 24px;gap:16px;overflow-y:auto}
           h1{font-size:22px;font-weight:700}
           p{color:#94a3b8;font-size:14px;text-align:center;line-height:1.5;max-width:300px}
           .row{display:flex;align-items:center;width:100%;background:#1e293b;
